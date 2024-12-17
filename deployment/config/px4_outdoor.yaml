@@ -1,6 +1,6 @@
 # linear and angular speed limits for the px4 vehicle in outdoor environments
-max_v: 1.5 # m/s
-max_w: 0.372 # rad/s
+max_v: 1.0 # m/s
+max_w: 0.3 # rad/s
 # observation rate fo the robot
 frame_rate: 10 # Hz 
 graph_rate: 0.3333 # Hz  

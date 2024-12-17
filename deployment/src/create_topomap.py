@@ -4,73 +4,89 @@ from utils import msg_to_pil
 import time
 import shutil
 
-# ROS
-import rospy
+# ROS2
+import rclpy
+from rclpy.node import Node
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import Joy
 
 IMAGE_TOPIC = "/usb_cam/image_raw"
 TOPOMAP_IMAGES_DIR = "../topomaps/images"
-obs_img = None
 
+class CreateTopomap(Node):
+    def __init__(self, args):
+        super().__init__("CREATE_TOPOMAP")
+        
+        # Logger
+        self.logger = self.get_logger()
+        
+        # publish & subscribe
+        self.subgoals_pub = self.create_publisher(Image, "/subgoals", 10)
+        self.image_curr_msg = self.create_subscription(Image, IMAGE_TOPIC, self.callback_obs, 10)
+        self.joy_sub = self.create_subscription(Joy, "joy", self.callback_joy, 10)
+        self.dt = args.dt
+        self.obs_img = None
+        self.start_time = float("inf")
+        self.count = 0
+        
+        self.topomap_name_dir = os.path.join(TOPOMAP_IMAGES_DIR, args.dir)
+        if not os.path.isdir(self.topomap_name_dir):
+            os.makedirs(self.topomap_name_dir)
+            self.logger.info(f"Created directory: {self.topomap_name_dir}")
+        else:
+            self.logger.warning(f"Directory already exists. Cleaning: {self.topomap_name_dir}")
+            self.remove_files_in_dir(self.topomap_name_dir)
+        
+        assert self.dt > 0, "dt must be positive"
+        self.timer = self.create_timer(self.dt, self.timer_callback)
 
-def remove_files_in_dir(dir_path: str):
-    for f in os.listdir(dir_path):
-        file_path = os.path.join(dir_path, f)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            print("Failed to delete %s. Reason: %s" % (file_path, e))
+    def remove_files_in_dir(self, dir_path: str):
+        for f in os.listdir(dir_path):
+            file_path = os.path.join(dir_path, f)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                self.logger.info(f"Removed file or directory: {file_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to delete {file_path}. Reason: {e}")
 
-
-def callback_obs(msg: Image):
-    global obs_img
-    obs_img = msg_to_pil(msg)
-
-
-def callback_joy(msg: Joy):
-    if msg.buttons[0]:
-        rospy.signal_shutdown("shutdown")
-
+    def callback_obs(self, msg: Image):
+        self.logger.debug("Received an image message.")
+        self.obs_img = msg_to_pil(msg)
+        
+    def callback_joy(self, msg: Joy):
+        if msg.buttons[0]:
+            self.logger.info("Shutdown requested via joystick.")
+            rclpy.shutdown()
+            
+    def timer_callback(self):
+        if self.obs_img is not None:
+            image_path = os.path.join(self.topomap_name_dir, f"{self.count}.png")
+            self.obs_img.save(image_path)
+            self.logger.info(f"Saved image {self.count}: {image_path}")
+            self.count += 1
+            self.start_time = time.time()
+            self.obs_img = None
+        
+        if time.time() - self.start_time > 2 * self.dt:
+            self.logger.warning(f"Topic {IMAGE_TOPIC} not publishing anymore. Shutting down...")
+            rclpy.shutdown()
 
 def main(args: argparse.Namespace):
-    global obs_img
-    rospy.init_node("CREATE_TOPOMAP", anonymous=False)
-    image_curr_msg = rospy.Subscriber(
-        IMAGE_TOPIC, Image, callback_obs, queue_size=1)
-    subgoals_pub = rospy.Publisher(
-        "/subgoals", Image, queue_size=1)
-    joy_sub = rospy.Subscriber("joy", Joy, callback_joy)
-
-    topomap_name_dir = os.path.join(TOPOMAP_IMAGES_DIR, args.dir)
-    if not os.path.isdir(topomap_name_dir):
-        os.makedirs(topomap_name_dir)
-    else:
-        print(f"{topomap_name_dir} already exists. Removing previous images...")
-        remove_files_in_dir(topomap_name_dir)
-        
-
-    assert args.dt > 0, "dt must be positive"
-    rate = rospy.Rate(1/args.dt)
-    print("Registered with master node. Waiting for images...")
-    i = 0
-    start_time = float("inf")
-    while not rospy.is_shutdown():
-        if obs_img is not None:
-            obs_img.save(os.path.join(topomap_name_dir, f"{i}.png"))
-            print("published image", i)
-            i += 1
-            rate.sleep()
-            start_time = time.time()
-            obs_img = None
-        if time.time() - start_time > 2 * args.dt:
-            print(f"Topic {IMAGE_TOPIC} not publishing anymore. Shutting down...")
-            rospy.signal_shutdown("shutdown")
-
-
+    rclpy.init()
+    node = CreateTopomap(args)
+    node.get_logger().info("Registered with master node. Waiting for images...")
+    
+    try: 
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("Keyboard interrupt detected. Shutting down...")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+   
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=f"Code to generate topomaps from the {IMAGE_TOPIC} topic"
@@ -90,5 +106,4 @@ if __name__ == "__main__":
         help=f"time between images sampled from the {IMAGE_TOPIC} topic (default: 3.0)",
     )
     args = parser.parse_args()
-
     main(args)

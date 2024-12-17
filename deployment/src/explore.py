@@ -32,8 +32,8 @@ from topic_names import (IMAGE_TOPIC,
 
 # CONSTANTS
 MODEL_WEIGHTS_PATH = "/home/xiaoang/visualnav-transformer/model_weights"
-ROBOT_CONFIG_PATH ="../config/px4_outdoor.yaml"
-MODEL_CONFIG_PATH = "../config/models.yaml"
+ROBOT_CONFIG_PATH ="/home/xiaoang/visualnav-transformer/deployment/config/px4_outdoor.yaml"
+MODEL_CONFIG_PATH = "/home/xiaoang/visualnav-transformer/deployment/config/models.yaml"
 with open(ROBOT_CONFIG_PATH, "r") as f:
     robot_config = yaml.safe_load(f)
 MAX_V = robot_config["max_v"]
@@ -60,10 +60,9 @@ class NoMaDExploration(Node):
         self.context_queue = []
         self.context_size = model_params["context_size"]
         
-        timer_period = 1.0 / RATE
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.timer = self.create_timer(1.0 / RATE, self.timer_callback)
         
-        self.get_logger().info("NoMaD exploration started. Waiting for image observations...")
+        self.get_logger().info(f"{model_params['model_type']} exploration started. Waiting for image observations...")
         
     
     def callback_obs(self, msg):
@@ -125,7 +124,7 @@ class NoMaDExploration(Node):
                 naction = to_numpy(get_action(naction))
                 
                 sampled_actions_msg = Float32MultiArray()
-                sampled_actions_msg.data = np.concatenate((np.array([0]), naction.flatten()))
+                sampled_actions_msg.data = np.concatenate((np.array([0], dtype=np.float32), naction.flatten())).tolist()
                 self.sampled_actions_pub.publish(sampled_actions_msg)
 
                 naction = naction[0] # change this based on heuristic
@@ -136,7 +135,7 @@ class NoMaDExploration(Node):
                     chosen_waypoint *= (MAX_V / RATE)
                 
                 waypoint_msg = Float32MultiArray()
-                waypoint_msg.data = chosen_waypoint
+                waypoint_msg.data = chosen_waypoint.tolist()
                 self.waypoint_pub.publish(waypoint_msg)
                 self.get_logger().info("Published waypoint!")
                 
