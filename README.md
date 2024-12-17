@@ -1,4 +1,4 @@
-### NoMaD with ROS2 Integration for Deployment on PX4-Autopilot in Gazebo Sim
+## NoMaD Deployment on PX4-Autopilot with ROS2
 
 [NoMaD: Goal Masked Diffusion Policies for Navigation and Exploration](https://arxiv.org/pdf/2310.07896) is a unified architecture that combines task-oriented navigation and task-agnostic exploration into a single diffusion policy. This enables robots to explore new environments effectively while navigating to user-specified goals when required.
 
